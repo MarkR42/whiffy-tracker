@@ -1,0 +1,9 @@
+{
+    "wifiAccessPoints": [
+        { "macAddress" : "5A:D3:F7:66:CD:97", "signalStrength": -76 },
+        { "macAddress" : "EC:CB:30:AA:39:CC", "signalStrength": -92 },
+        { "macAddress" : "A8:D3:F7:66:CD:96", "signalStrength": -76 },
+        { "macAddress" : "30:91:8F:A9:6E:9B", "signalStrength": -92 },
+        { "macAddress" : "02:FE:F4:3D:D4:70", "signalStrength": -84 }
+    ]
+}

@@ -1,0 +1,6 @@
+fs.img
+api_key.txt
+
+*.pyc
+__pycache__
+
