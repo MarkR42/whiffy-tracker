@@ -10,6 +10,62 @@ import time
 import datetime
 import socket
 import struct
+import sqlite3
+import collections
+
+class DataSaver():
+    db_filename = 'messages.sqlite3'
+
+    def __init__(self):
+        self.chunks_by_id = collections.defaultdict(list)
+        # fail-fast
+        db = self.init_db()
+        db.close() 
+
+    def store_name(self, name):
+        """
+            A dns name, is the local part (without domain).
+
+            Check that it's one we're interested in, and store
+            in memory until we have a complete packet,
+            identified by the "eom" name. 
+
+            Once we have a complete packet, store the packet in sqlite.
+        """
+        bits = name.split('.', 1)
+        if len(bits) > 1:
+            info, chunk_id = bits
+            self.chunks_by_id[chunk_id].append(info)
+            if info.lower() == 'eom':
+                self.save_chunk(chunk_id)
+
+    def save_chunk(self, chunk_id):
+        db = self.init_db()
+        chunk = self.chunks_by_id[chunk_id]
+        if len(chunk) < 2:
+            # Not useful.
+            return
+        raw_info = '\n'.join(chunk)
+        time_now = datetime.datetime.utcnow().replace(microsecond=0)
+        time_human = time_now.isoformat()
+        time_created = time_now.timestamp()
+        db.execute("INSERT INTO message (id, time_created, time_human, raw_info) VALUES "
+            " (?,?,?,?)", (chunk_id, time_created, time_human, raw_info) )
+        db.commit()
+        db.close()
+        # free memory:
+        del self.chunks_by_id[chunk_id]
+
+    def init_db(self):
+        db = sqlite3.connect(self.db_filename)
+        try:
+            db.execute("CREATE TABLE message(id, time_created, time_human, raw_info, "
+                " status, machine_id, session_id, lat, lon,"
+                " PRIMARY KEY(id))")
+            db.commit()
+        except sqlite3.OperationalError:
+            pass
+        return db
 
 class DynamicResolver(BaseResolver):
 
@@ -20,6 +76,7 @@ class DynamicResolver(BaseResolver):
 
     def __init__(self):
         self.ttl = 120
+        self.saver = DataSaver()
 
     def resolve(self,request,handler):
         reply = request.reply()
@@ -53,6 +110,7 @@ class DynamicResolver(BaseResolver):
         if local_name == 'time':
             # short ttl on time.
             return reply_ipv4(request, self.time_ip(), 5)
+        self.saver.store_name(local_name)
         # Otherwise:
         reply.header.rcode = RCODE.NXDOMAIN
         return reply
