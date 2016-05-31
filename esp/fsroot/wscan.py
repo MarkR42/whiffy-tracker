@@ -5,12 +5,12 @@ import socket
 import machine
 import ubinascii
 import log
+import telemetry
 
 # Our lib:
 import minihttp
 
-TELEMETRY_DOMAIN = 'mr8266.tk'
-TIME_HOST = 'time.' + TELEMETRY_DOMAIN
+TIME_HOST = 'time.' + telemetry.TELEMETRY_DOMAIN
 
 blueled = machine.Pin(2, machine.Pin.OUT)
 
@@ -106,69 +106,6 @@ def maybe_set_clock_from_dns():
             ) 
         log.log("RTC is set.")
 
-def hex_str(s):
-    return str(ubinascii.hexlify(s), 'ascii')
-
-class SendTimeout(Exception):
-    pass
-
-class TelemetrySession():
-    
-    def __init__(self):
-        # Create unique session id.
-        self.session_id = hex_str(os.urandom(4))
-        self.last_scan = None
-        self.last_scan_time = None
-        self.chunk_id = 0
-    
-    def send_chunk(self):
-        try:
-            self.maybe_send_chunk()
-        except SendTimeout:
-            log.log("Timeout while sending telemetry")
-        
-    def maybe_send_chunk(self):
-        self.chunk_id += 1
-        t0 = time.ticks_ms()
-        def send1(info):
-            # info must be a valid dns name and not too long
-            try:
-                # Info, session id, chunk id, domain:
-                # e.g. hello.01234567.0001.mr8266.tk
-                dnsname = '%s.%s.%04x.%s' % (info, self.session_id, self.chunk_id, TELEMETRY_DOMAIN)
-                socket.getaddrinfo(dnsname, 80)
-            except OSError:
-                pass # may fail, but we ignore.
-            # Check for timeout
-            timetaken = time.ticks_diff(t0, time.ticks_ms())
-            if timetaken > 20000:
-                raise SendTimeout()
-        
-        send1('machine-' + hex_str(machine.unique_id()))
-        send1('time-%d' % self.last_scan_time)
-        # Send the last scan, if possible.
-        if self.last_scan is not None:
-            for ap in self.last_scan:
-                mac = hex_str(ap[0])
-                # Strength is usually a negative integer.
-                strength = str(ap[1])
-                send1('ap-' + mac + '-' + strength)
-        # Send an "end of message"
-        send1('eom')
-        log.log("telemetry sent")
-    
-    def store_scan(self, scan):
-        # Store the important parts of a scan result somewhere.
-        # Scan is a tuple of tuples,
-        # (ssid, macaddr, channel, strength, auth_mode, is_hidden)
-        # Example:
-        # (b'BTWifi-with-FON', b'Z\xd3\xf7f\xcd\x97', 6, -77, 0, 0)
-        # We are only really interested in macaddr and signal strength.
-        self.last_scan = [
-            (s[1], s[3]) for s in scan
-            ]
-        self.last_scan_time = time.time()
-
 def investigate_dns(telsession):
     print("Starting DNS investigation")
     def dns_is_honest():
@@ -193,10 +130,10 @@ def investigate_dns(telsession):
     if honest:
         # Ok, we've got a working DNS.
         maybe_set_clock_from_dns()
-        telsession.send_chunk()
+        telsession.send_telemetry()
 
 def mainloop(sta_if):
-    telsession = TelemetrySession()
+    telsession = telemetry.TelemetrySession()
     # Now search for a valid API.
     while True:
         ok = search_for_ap(sta_if, telsession)
