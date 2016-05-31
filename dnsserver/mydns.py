@@ -39,6 +39,9 @@ class DataSaver():
             self.chunks_by_id[chunk_id].append(info)
             if info.lower() == 'eom':
                 self.save_chunk(chunk_id)
+            return True
+        else:
+            return False
 
     def save_chunk(self, chunk_id):
         db = self.init_db()
@@ -111,7 +114,8 @@ class DynamicResolver(BaseResolver):
         if local_name == 'time':
             # short ttl on time.
             return reply_ipv4(request, self.time_ip(), 5)
-        self.saver.store_name(local_name)
+        if self.saver.store_name(local_name):
+            return reply_ipv4(request, '127.0.0.3')
         # Otherwise:
         reply.header.rcode = RCODE.NXDOMAIN
         return reply
