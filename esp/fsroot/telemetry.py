@@ -40,8 +40,6 @@ class TelemetrySession():
         # successfully.
         self.file_read_pos = 0
     
-
-    
     def store_scan(self, scan):
         # Check if we already did a scan too recently.
         now = time.time()

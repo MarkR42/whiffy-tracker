@@ -14,7 +14,8 @@ rm -f fs.img
 
 # Note that we seem to need a 4096 sector size, or Micropython
 # won't access the fs.
-mkfs.fat -C -f 1 -S 4096 fs.img 1024
+# -s = sectors per cluster
+mkfs.fat -C -f 1 -S 4096 -s 1 fs.img 1024
 
 mcopy -i fs.img -s fsroot/* :: 
 

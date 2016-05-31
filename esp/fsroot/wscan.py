@@ -6,13 +6,14 @@ import machine
 import ubinascii
 import log
 import telemetry
+import sys
 
 # Our lib:
 import minihttp
 
 TIME_HOST = 'time.' + telemetry.TELEMETRY_DOMAIN
 
-blueled = machine.Pin(2, machine.Pin.OUT)
+blueled = None
 
 def led_on():
     blueled.low()
@@ -62,6 +63,10 @@ def search_for_ap(sta_if, telsession):
         if ok:
             log.log("Connected to ", ssid)
             return True
+        else:
+            print("Failed to connect to ", ssid)
+    # Nothing useful found, cancel any pending connection.
+    sta_if.disconnect()
     log.log("No good accesspoints found")
     return False
 
@@ -75,14 +80,16 @@ def get_ip(name):
     else:
         return None
 
+clock_is_set = False
+
 def maybe_set_clock_from_dns():
     # Lookup time.mr8266.tk
     # Which gives us an IPv4 address which contains the number of
     # seconds since 2000
     # Check if clock is already set.
-    lt = time.localtime()
-    if lt[0] >= 2016:
-        # Year ok? Already set.
+    global clock_is_set
+    if clock_is_set:
+        # Already set.
         return
     time_ip = get_ip(TIME_HOST)
     if time_ip is not None:
@@ -95,6 +102,10 @@ def maybe_set_clock_from_dns():
             secs += n
         del bits
         lt = time.localtime(secs)
+        if not 2016 <= lt[0] <= 2019:
+            log.log("Implausible time, from dns server. Ignoring.")
+            return
+            
         print("Setting RTC...")
         rtc = machine.RTC()
         # Unfortunately this is 
@@ -105,6 +116,7 @@ def maybe_set_clock_from_dns():
             lt[3], lt[4], lt[5], 0)
             ) 
         log.log("RTC is set.")
+        clock_is_set = True
 
 def investigate_dns(telsession):
     print("Starting DNS investigation")
@@ -139,11 +151,12 @@ def mainloop(sta_if):
         ok = search_for_ap(sta_if, telsession)
         if ok:
             investigate_dns(telsession)
-        log.flush()
-    
+        log.flush()    
 
 def main():
     log.log("Starting main")
+    global blueled
+    blueled = machine.Pin(2, machine.Pin.OUT)
     # If there is a AP active, let's turn it off.
     network.WLAN(network.AP_IF).active(False)
     # Now activate the STA interface.
@@ -159,6 +172,6 @@ def main():
     log.log("Bye bye")
     log.flush()
     time.sleep(10)
-    machine.reset()
+    sys.exit() # Soft reboot
     
 
