@@ -4,6 +4,7 @@ import network
 import socket
 import machine
 import ubinascii
+import log
 
 # Our lib:
 import minihttp
@@ -44,9 +45,10 @@ def search_for_ap(sta_if, telsession):
             if ap[4] == 0: # AUTH_OPEN
                 ssid_set.add(ap[0])
         led_on()
-    except OSError:
-        print("Scan fail")
-        time.sleep(1)
+    except Exception:
+        log.log("Scan fail - could be MemoryError")
+        led_on()
+        time.sleep(5)
         return False
     telsession.store_scan(scan)
     del scan
@@ -58,9 +60,9 @@ def search_for_ap(sta_if, telsession):
         # Wait for connection...
         ok = wait_for_ap_connected(sta_if)
         if ok:
-            print("Connected to ", ssid)
+            log.log("Connected to ", ssid)
             return True
-    print("No good accesspoints found")
+    log.log("No good accesspoints found")
     return False
 
 def get_ip(name):
@@ -102,7 +104,7 @@ def maybe_set_clock_from_dns():
             (lt[0], lt[1], lt[2], 0,
             lt[3], lt[4], lt[5], 0)
             ) 
-        print("RTC is set.")
+        log.log("RTC is set.")
 
 def hex_str(s):
     return str(ubinascii.hexlify(s), 'ascii')
@@ -123,7 +125,7 @@ class TelemetrySession():
         try:
             self.maybe_send_chunk()
         except SendTimeout:
-            print("Timeout while sending telemetry")
+            log.log("Timeout while sending telemetry")
         
     def maybe_send_chunk(self):
         self.chunk_id += 1
@@ -153,6 +155,7 @@ class TelemetrySession():
                 send1('ap-' + mac + '-' + strength)
         # Send an "end of message"
         send1('eom')
+        log.log("telemetry sent")
     
     def store_scan(self, scan):
         # Store the important parts of a scan result somewhere.
@@ -192,23 +195,33 @@ def investigate_dns(telsession):
         maybe_set_clock_from_dns()
         telsession.send_chunk()
 
-def main():
-    print("Hi from Micropython");
-    # If there is a AP active, let's turn it off.
-    network.WLAN(network.AP_IF).active(False)
-    # Now activate the STA interface.
-    sta_if = network.WLAN(network.STA_IF)
-    sta_if.active(True)
-    print("Interfaces active")
-    # In case we are already connected, disconnect.
-    sta_if.disconnect()
-    
+def mainloop(sta_if):
     telsession = TelemetrySession()
     # Now search for a valid API.
     while True:
         ok = search_for_ap(sta_if, telsession)
         if ok:
             investigate_dns(telsession)
+        log.flush()
     
+
+def main():
+    log.log("Starting main")
+    # If there is a AP active, let's turn it off.
+    network.WLAN(network.AP_IF).active(False)
+    # Now activate the STA interface.
+    sta_if = network.WLAN(network.STA_IF)
+    sta_if.active(True)
+    log.log("Interfaces active")
+    # In case we are already connected, disconnect.
+    sta_if.disconnect()
+    try:
+        mainloop(sta_if)
+    except Exception as e:
+        log.log("Unexpected exception:", e)
+    log.log("Bye bye")
+    log.flush()
+    time.sleep(10)
+    machine.reset()
     
 
