@@ -155,6 +155,7 @@ def mainloop(sta_if):
 
 def main():
     log.log("Starting main")
+    log.log("machine.reset_cause = ", machine.reset_cause())
     global blueled
     blueled = machine.Pin(2, machine.Pin.OUT)
     # If there is a AP active, let's turn it off.

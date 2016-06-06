@@ -29,16 +29,40 @@ class SendTimeout(Exception):
 
 class TelemetrySession():
     
+    session_id = None
+    chunk_id = 0
+    reset = True
+    
     def __init__(self):
-        # Create unique session id.
-        self.session_id = hex_str(os.urandom(4))
+        
+        self._init_from_rtcmemory()
+        if not self.session_id:
+            # Create probably unique session id.
+            self.session_id = hex_str(os.urandom(4))
         self.last_scan_time = 0
-        self.chunk_id = 0
         # data_file is to be used to store telemetry temporarily.
         self.data_file = open(DATA_FILE_NAME, 'a+b')
         # file_read_pos is where we've reached in data_file, sending
         # successfully.
         self.file_read_pos = 0
+        
+    def _init_from_rtcmemory(self):
+        # Check rtc memory
+        rtc = machine.RTC()
+        rtcmem = rtc.memory()
+        if len(rtcmem) == 0:
+            return
+        # rtc memory should contain session_id,chunk_id
+        bits = rtcmem.split(b',')
+        if len(bits) == 2:
+            # Ok
+            self.session_id = bits[0]
+            self.chunk_id = int(bits[1])
+            log.log("Using previous session id from rtcmemory:" , self.session_id)
+    
+    def _save_to_rtcmemory(self):
+        rtc = machine.RTC()
+        rtc.memory(b'%s,%d' % (self.session_id, self.chunk_id))
     
     def store_scan(self, scan):
         # Check if we already did a scan too recently.
@@ -58,6 +82,10 @@ class TelemetrySession():
             
         store_info(b'machine-' + hex_str(machine.unique_id()))
         store_info(b'time-%d' % (now, ))
+        if self.reset:
+            store_info(b'reset-%d' % (machine.reset_cause()))
+            self.reset = False
+            
         for s in scan:
             bssid = s[1]
             strength = s[3]
@@ -115,6 +143,7 @@ class TelemetrySession():
         self.truncate_datafile()
         # If we get here, all telemetry is sent!
         log.log("telemetry sent, next chunk_id=%d" % (self.chunk_id,))
+        self._save_to_rtcmemory()
         
     def truncate_datafile(self):
         # Truncate file.
