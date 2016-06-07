@@ -7,6 +7,7 @@ import ubinascii
 import log
 import telemetry
 import sys
+import datastr
 
 # Our lib:
 import minihttp
@@ -34,7 +35,7 @@ def wait_for_ap_connected(sta_if):
     # Give up.
     return False
 
-def search_for_ap(sta_if, telsession):
+def search_for_ap(sta_if, telsession, recentgoodssids):
     """
         Do scans and find a working AP we can connect to without
         a password :)
@@ -60,15 +61,22 @@ def search_for_ap(sta_if, telsession):
     # Try them in turn,
     ssid_list = sorted(ssid_set)
     del ssid_set
-    for ssid in ssid_list:
-        sta_if.connect(ssid, '')
-        # Wait for connection...
-        ok = wait_for_ap_connected(sta_if)
-        if ok:
-            log.log("Connected to ", ssid)
-            return True
-        else:
-            print("Failed to connect to ", ssid)
+    # Try "priority" ones stored in recentgoodssids
+    for goodness in (True, False):
+        for ssid in ssid_list:
+            good = (ssid in recentgoodssids)
+            if good == goodness: 
+                sta_if.connect(ssid, '')
+                # Wait for connection...
+                ok = wait_for_ap_connected(sta_if)
+                if ok:
+                    log.log("Connected to ", ssid)
+                    dns_ok = investigate_dns(telsession)
+                    if dns_ok:
+                        recentgoodssids.add(ssid)
+                        return True
+                else:
+                    print("Failed to connect to ", ssid)
     # Nothing useful found, cancel any pending connection.
     sta_if.disconnect()
     log.log("No good accesspoints found")
@@ -143,20 +151,24 @@ def investigate_dns(telsession):
         # Now check again
         honest = dns_is_honest()
     print("dns_is_honest2: ", honest)
-    if honest:
-        # Ok, we've got a working DNS.
-        maybe_set_clock_from_dns()
-        telsession.send_telemetry()
+    return honest
+    
+def use_working_ap(telsession):
+    # Ok, we've got a working DNS.
+    maybe_set_clock_from_dns()
+    telsession.send_telemetry()
 
 def mainloop(sta_if):
     telsession = telemetry.TelemetrySession()
+    recentgoodssids = datastr.RecentStrings(60)
     # Now search for a valid API.
     while True:
         sta_if.disconnect()
-        ok = search_for_ap(sta_if, telsession)
+        ok = search_for_ap(sta_if, telsession, recentgoodssids)
         if ok:
-            investigate_dns(telsession)
-        log.flush()    
+            use_working_ap(telsession)
+        log.flush()   
+        print(recentgoodssids._bytes) # DEBUG 
 
 def main():
     log.log("Starting main")
