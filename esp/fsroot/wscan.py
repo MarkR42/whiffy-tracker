@@ -23,8 +23,12 @@ def led_off():
 
 def wait_for_ap_connected(sta_if):
     # Returns True if successful.
-    for n in range(14):
+    for n in range(20):
         time.sleep_ms(500)
+        st = sta_if.status()
+        # Bail out early if we get NO_AP_FOUND.
+        if st == network.STAT_NO_AP_FOUND:
+            return False
         if sta_if.isconnected():
             return True
     # Give up.

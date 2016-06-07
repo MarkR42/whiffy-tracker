@@ -115,11 +115,14 @@ class TelemetrySession():
         def try_to_send(info):
             dnsname = b'%s.%s.%04x.%s' % (info, self.session_id, self.chunk_id, TELEMETRY_DOMAIN)
             try:
-                socket.getaddrinfo(dnsname, 80)
+                r = socket.getaddrinfo(dnsname, 80)
+                ipv4addr = r[0][-1][0]
+                if not ipv4addr.startswith(b'127.0.0.'):
+                    log.log("bad telemetry response:", ipv4addr)
+                    return False
                 return True
             except OSError:
                 return False
-            
         
         # Seek to end of file
         self.data_file.seek(0,2)
