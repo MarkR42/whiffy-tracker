@@ -148,6 +148,7 @@ def mainloop(sta_if):
     telsession = telemetry.TelemetrySession()
     # Now search for a valid API.
     while True:
+        sta_if.disconnect()
         ok = search_for_ap(sta_if, telsession)
         if ok:
             investigate_dns(telsession)
