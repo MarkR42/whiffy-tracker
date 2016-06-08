@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html>
+ <head><title>Tracker map</title>
+
+<script>
+function initMap()
+{
+    var map = new google.maps.Map(document.getElementById('map'),
+        { zoom: 8, center: markers[0] } );
+       
+    for (var m of markers) {
+        var mapMarker = new google.maps.Marker(
+            {position: m, map: map, title: m.id } );
+    }
+    var path = new google.maps.Polyline({
+        path: markers,
+        strokeColor: '#FF0000',
+        strokeOpacity: 1.0,
+        strokeWeight: 2
+    });
+    path.setMap(map);
+
+}
+
+
+</script>
+<script src="markers.js"></script>
+<style type="text/css">
+ html, body { height: 100%; margin: 0; padding: 0; }
+  #map { height: 100%; }
+</style>
+ </head>
+ <body>
+
+<div id="map">
+</div>
+<script src="https://maps.googleapis.com/maps/api/js?key=AIzaSyBZ_g72jxRdMfJGy6pRas_IVyHdiw6iO_4&callback=initMap"
+    async defer></script>
+</body></html>

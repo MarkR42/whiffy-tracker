@@ -39,6 +39,8 @@ class DataSaver():
             self.chunks_by_id[chunk_id].append(info)
             if info.lower() == 'eom':
                 self.save_chunk(chunk_id)
+                # free memory:
+                del self.chunks_by_id[chunk_id]
             return True
         else:
             return False
@@ -49,21 +51,30 @@ class DataSaver():
         if len(chunk) < 2:
             # Not useful.
             return
-        raw_info = '\n'.join(chunk)
-        time_now = datetime.datetime.utcnow().replace(microsecond=0)
-        time_human = time_now.isoformat()
-        time_created = time_now.timestamp()
-        db.execute("INSERT INTO message (id, time_created, time_human, raw_info) VALUES "
-            " (?,?,?,?)", (chunk_id, time_created, time_human, raw_info) )
-        db.commit()
-        db.close()
-        # free memory:
-        del self.chunks_by_id[chunk_id]
+        # Read timestamp
+        # (default time - the time we received it)
+        time_received = datetime.datetime.utcnow().replace(microsecond=0)
+        chunk_datetime = None
+        for info in chunk:
+            if info.startswith('time-'):
+                chunk_time = int(info.split('-')[1])
+                # our time epoch, add
+                chunk_datetime = datetime.datetime(2000,1,1) + datetime.timedelta(seconds=chunk_time)
+        if chunk_datetime is None:
+            print("Discard message: no timestamp")
+        else:
+            raw_info = '\n'.join(chunk)
+            time_human = chunk_datetime.isoformat()
+            time_created = chunk_datetime.timestamp()
+            db.execute("INSERT INTO message (id, time_received, time_created, time_human, raw_info) VALUES "
+                " (?,?,?,?,?)", (chunk_id, time_received.timestamp(), time_created, time_human, raw_info) )
+            db.commit()
+            db.close()
 
     def init_db(self):
         db = sqlite3.connect(self.db_filename)
         try:
-            db.execute("CREATE TABLE message(id, time_created, time_human, raw_info, "
+            db.execute("CREATE TABLE message(id, time_received, time_created, time_human, raw_info, "
                 " status, machine_id, session_id, lat, lon,"
                 " PRIMARY KEY(id))")
             db.commit()
