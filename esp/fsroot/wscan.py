@@ -5,14 +5,16 @@ import socket
 import machine
 import ubinascii
 import log
+import telemetry
+import sys
+import datastr
 
 # Our lib:
 import minihttp
 
-TELEMETRY_DOMAIN = 'mr8266.tk'
-TIME_HOST = 'time.' + TELEMETRY_DOMAIN
+TIME_HOST = 'time.' + telemetry.TELEMETRY_DOMAIN
 
-blueled = machine.Pin(2, machine.Pin.OUT)
+blueled = None
 
 def led_on():
     blueled.low()
@@ -22,14 +24,18 @@ def led_off():
 
 def wait_for_ap_connected(sta_if):
     # Returns True if successful.
-    for n in range(14):
+    for n in range(20):
         time.sleep_ms(500)
+        st = sta_if.status()
+        # Bail out early if we get NO_AP_FOUND.
+        if st == network.STAT_NO_AP_FOUND:
+            return False
         if sta_if.isconnected():
             return True
     # Give up.
     return False
 
-def search_for_ap(sta_if, telsession):
+def search_for_ap(sta_if, telsession, recentgoodssids):
     """
         Do scans and find a working AP we can connect to without
         a password :)
@@ -55,13 +61,24 @@ def search_for_ap(sta_if, telsession):
     # Try them in turn,
     ssid_list = sorted(ssid_set)
     del ssid_set
-    for ssid in ssid_list:
-        sta_if.connect(ssid, '')
-        # Wait for connection...
-        ok = wait_for_ap_connected(sta_if)
-        if ok:
-            log.log("Connected to ", ssid)
-            return True
+    # Try "priority" ones stored in recentgoodssids
+    for goodness in (True, False):
+        for ssid in ssid_list:
+            good = (ssid in recentgoodssids)
+            if good == goodness: 
+                sta_if.connect(ssid, '')
+                # Wait for connection...
+                ok = wait_for_ap_connected(sta_if)
+                if ok:
+                    log.log("Connected to ", ssid)
+                    dns_ok = investigate_dns(telsession)
+                    if dns_ok:
+                        recentgoodssids.add(ssid)
+                        return True
+                else:
+                    print("Failed to connect to ", ssid)
+    # Nothing useful found, cancel any pending connection.
+    sta_if.disconnect()
     log.log("No good accesspoints found")
     return False
 
@@ -75,14 +92,16 @@ def get_ip(name):
     else:
         return None
 
+clock_is_set = False
+
 def maybe_set_clock_from_dns():
     # Lookup time.mr8266.tk
     # Which gives us an IPv4 address which contains the number of
     # seconds since 2000
     # Check if clock is already set.
-    lt = time.localtime()
-    if lt[0] >= 2016:
-        # Year ok? Already set.
+    global clock_is_set
+    if clock_is_set:
+        # Already set.
         return
     time_ip = get_ip(TIME_HOST)
     if time_ip is not None:
@@ -95,6 +114,10 @@ def maybe_set_clock_from_dns():
             secs += n
         del bits
         lt = time.localtime(secs)
+        if not 2016 <= lt[0] <= 2019:
+            log.log("Implausible time, from dns server. Ignoring.")
+            return
+            
         print("Setting RTC...")
         rtc = machine.RTC()
         # Unfortunately this is 
@@ -105,69 +128,7 @@ def maybe_set_clock_from_dns():
             lt[3], lt[4], lt[5], 0)
             ) 
         log.log("RTC is set.")
-
-def hex_str(s):
-    return str(ubinascii.hexlify(s), 'ascii')
-
-class SendTimeout(Exception):
-    pass
-
-class TelemetrySession():
-    
-    def __init__(self):
-        # Create unique session id.
-        self.session_id = hex_str(os.urandom(4))
-        self.last_scan = None
-        self.last_scan_time = None
-        self.chunk_id = 0
-    
-    def send_chunk(self):
-        try:
-            self.maybe_send_chunk()
-        except SendTimeout:
-            log.log("Timeout while sending telemetry")
-        
-    def maybe_send_chunk(self):
-        self.chunk_id += 1
-        t0 = time.ticks_ms()
-        def send1(info):
-            # info must be a valid dns name and not too long
-            try:
-                # Info, session id, chunk id, domain:
-                # e.g. hello.01234567.0001.mr8266.tk
-                dnsname = '%s.%s.%04x.%s' % (info, self.session_id, self.chunk_id, TELEMETRY_DOMAIN)
-                socket.getaddrinfo(dnsname, 80)
-            except OSError:
-                pass # may fail, but we ignore.
-            # Check for timeout
-            timetaken = time.ticks_diff(t0, time.ticks_ms())
-            if timetaken > 20000:
-                raise SendTimeout()
-        
-        send1('machine-' + hex_str(machine.unique_id()))
-        send1('time-%d' % self.last_scan_time)
-        # Send the last scan, if possible.
-        if self.last_scan is not None:
-            for ap in self.last_scan:
-                mac = hex_str(ap[0])
-                # Strength is usually a negative integer.
-                strength = str(ap[1])
-                send1('ap-' + mac + '-' + strength)
-        # Send an "end of message"
-        send1('eom')
-        log.log("telemetry sent")
-    
-    def store_scan(self, scan):
-        # Store the important parts of a scan result somewhere.
-        # Scan is a tuple of tuples,
-        # (ssid, macaddr, channel, strength, auth_mode, is_hidden)
-        # Example:
-        # (b'BTWifi-with-FON', b'Z\xd3\xf7f\xcd\x97', 6, -77, 0, 0)
-        # We are only really interested in macaddr and signal strength.
-        self.last_scan = [
-            (s[1], s[3]) for s in scan
-            ]
-        self.last_scan_time = time.time()
+        clock_is_set = True
 
 def investigate_dns(telsession):
     print("Starting DNS investigation")
@@ -190,23 +151,30 @@ def investigate_dns(telsession):
         # Now check again
         honest = dns_is_honest()
     print("dns_is_honest2: ", honest)
-    if honest:
-        # Ok, we've got a working DNS.
-        maybe_set_clock_from_dns()
-        telsession.send_chunk()
+    return honest
+    
+def use_working_ap(telsession):
+    # Ok, we've got a working DNS.
+    maybe_set_clock_from_dns()
+    telsession.send_telemetry()
 
 def mainloop(sta_if):
-    telsession = TelemetrySession()
+    telsession = telemetry.TelemetrySession()
+    recentgoodssids = datastr.RecentStrings(60)
     # Now search for a valid API.
     while True:
-        ok = search_for_ap(sta_if, telsession)
+        sta_if.disconnect()
+        ok = search_for_ap(sta_if, telsession, recentgoodssids)
         if ok:
-            investigate_dns(telsession)
-        log.flush()
-    
+            use_working_ap(telsession)
+        log.flush()   
+        print(recentgoodssids._bytes) # DEBUG 
 
 def main():
     log.log("Starting main")
+    log.log("machine.reset_cause = ", machine.reset_cause())
+    global blueled
+    blueled = machine.Pin(2, machine.Pin.OUT)
     # If there is a AP active, let's turn it off.
     network.WLAN(network.AP_IF).active(False)
     # Now activate the STA interface.
@@ -222,6 +190,6 @@ def main():
     log.log("Bye bye")
     log.flush()
     time.sleep(10)
-    machine.reset()
+    sys.exit() # Soft reboot
     
 

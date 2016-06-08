@@ -1,11 +1,17 @@
 import wscan
 import time
 import network
+import machine
 
 def go():
     wscan.main()
 
 def delayed_go():
+    if machine.reset_cause() == 2:
+        # Crash?
+        # Go immediately
+        return go()
+        
     for i in range(15,0,-1):
         print("Will start main activity in %d seconds" % (i,))
         time.sleep(1)
