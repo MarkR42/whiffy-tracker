@@ -10,6 +10,8 @@ class RecentStrings(object):
         
     """
     
+    modified = False
+    
     def __init__(self, size):
         self._bytes = bytearray(size)
         
@@ -26,6 +28,7 @@ class RecentStrings(object):
         self._bytes[:l] = bytestr
         # And a null
         self._bytes[l] = 0
+        self.modified = True
         
     def __contains__(self, bytestr):
         # True if bytestr has been added and not yet fallen off the end.
@@ -35,4 +38,15 @@ class RecentStrings(object):
         needle = b'\0' + bytestr + b'\0'
         
         return needle in self._bytes
+        
+    def save(self, filename):
+        with open(filename, 'wb') as f:
+            f.write(self._bytes)
+        self.modified = False
+            
+    def load(self, filename):
+        with open(filename, 'rb') as f:
+            self._bytes[::] = f.read(len(self._bytes))
+        self.modified = False
+        
         

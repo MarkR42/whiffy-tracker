@@ -14,6 +14,7 @@ import minihttp
 
 TIME_HOST = 'time.' + telemetry.TELEMETRY_DOMAIN
 
+SSIDS_FILE = 'ssids.bin'
 blueled = None
 
 def led_on():
@@ -59,11 +60,16 @@ def search_for_ap(sta_if, telsession, recentgoodssids):
     telsession.store_scan(scan)
     del scan
     # Try them in turn,
-    ssid_list = sorted(ssid_set)
+    ssid_list = list(ssid_set)
+    log.log("AP count=", len(ssid_list))
     del ssid_set
+    give_up_time = time.time() + 30 
     # Try "priority" ones stored in recentgoodssids
     for goodness in (True, False):
         for ssid in ssid_list:
+            if time.time() > give_up_time:
+                log.log("Took too long trying to connect to all APs")
+                break
             good = (ssid in recentgoodssids)
             if good == goodness: 
                 sta_if.connect(ssid, '')
@@ -76,7 +82,7 @@ def search_for_ap(sta_if, telsession, recentgoodssids):
                         recentgoodssids.add(ssid)
                         return True
                 else:
-                    print("Failed to connect to ", ssid)
+                    log.log("Failed to connect to ", ssid)
     # Nothing useful found, cancel any pending connection.
     sta_if.disconnect()
     log.log("No good accesspoints found")
@@ -161,6 +167,11 @@ def use_working_ap(telsession):
 def mainloop(sta_if):
     telsession = telemetry.TelemetrySession()
     recentgoodssids = datastr.RecentStrings(60)
+    try:
+        recentgoodssids.load(SSIDS_FILE)
+    except OSError:
+        pass # Unable to load ssids file, but that's ok,
+        # maybe we haven't created it yet.
     # Now search for a valid API.
     while True:
         sta_if.disconnect()
@@ -168,7 +179,8 @@ def mainloop(sta_if):
         if ok:
             use_working_ap(telsession)
         log.flush()   
-        print(recentgoodssids._bytes) # DEBUG 
+        if recentgoodssids.modified:
+            recentgoodssids.save(SSIDS_FILE)
 
 def main():
     log.log("Starting main")
@@ -190,6 +202,6 @@ def main():
     log.log("Bye bye")
     log.flush()
     time.sleep(10)
-    sys.exit() # Soft reboot
+    machine.reset()
     
 

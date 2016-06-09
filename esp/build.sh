@@ -17,6 +17,7 @@ rm -f fs.img
 # -s = sectors per cluster
 mkfs.fat -C -f 1 -S 4096 -s 1 fs.img 1024
 
+rm -r fsroot/__pycache__ # remove pycache
 mcopy -i fs.img -s fsroot/* :: 
 
 # Create some directories

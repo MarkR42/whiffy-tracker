@@ -7,7 +7,7 @@ import ubinascii
 
 TELEMETRY_DOMAIN = 'mr8266.tk'
 # Minimum time between chunks:
-MIN_STORE_TIME = 30 # Seconds
+MIN_STORE_TIME = 20 # Seconds
 
 DATA_FILE_NAME = 'telem.dat'
 def hex_str(s):
@@ -25,6 +25,10 @@ class SendTimeout(Exception):
     
     If we reach the end of the file, i.e. we're up to date, we
     can truncate the file to save temp space.
+    
+    If the device crashes, then we will reset file_read_pos to zero
+    on the next restart, and (possibly) resend a whole load of 
+    telemetry, which should be ignored so it's ok.
 """
 
 class TelemetrySession():
@@ -135,13 +139,22 @@ class TelemetrySession():
         self.data_file.seek(self.file_read_pos)
         while self.file_read_pos < eof_pos:
             line = self.data_file.readline()
+            current_pos = self.data_file.tell()
+            # If this is the very LAST item,
+            if current_pos == eof_pos:
+                # Send an extra element "tx" to indicate that
+                # this is a transmit chunk.
+                # This will be sent just before the final "eom" in
+                # a batch.
+                try_to_send(b"tx") # NB: This can fail, it's ok.
             if try_to_send(line.rstrip()):
                 # Success
                 self.file_read_pos = self.data_file.tell()
                 if line.startswith(b'eom'):
                     self.chunk_id += 1
             else:
-                # Fail
+                # Fail - we will retry because file_read_pos has not
+                # been moved.
                 return
         self.truncate_datafile()
         # If we get here, all telemetry is sent!
