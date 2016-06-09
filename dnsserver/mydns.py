@@ -66,9 +66,13 @@ class DataSaver():
             raw_info = '\n'.join(chunk)
             time_human = chunk_datetime.isoformat()
             time_created = chunk_datetime.timestamp()
-            db.execute("INSERT INTO message (id, time_received, time_created, time_human, raw_info) VALUES "
+            try:
+                db.execute("INSERT INTO message (id, time_received, time_created, time_human, raw_info) VALUES "
                 " (?,?,?,?,?)", (chunk_id, time_received.timestamp(), time_created, time_human, raw_info) )
-            db.commit()
+                db.commit()
+            except sqlite3.IntegrityError as e:
+                # Probably duplicate.
+                pass
             db.close()
 
     def init_db(self):
