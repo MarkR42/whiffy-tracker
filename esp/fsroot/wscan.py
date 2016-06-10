@@ -98,6 +98,9 @@ def get_ip(name):
     else:
         return None
 
+# This set to True only if we have set the clock from the network
+# since the last boot or reset. Not other clock sources, or RTC
+# over a reboot. 
 clock_is_set = False
 
 def maybe_set_clock_from_dns():
@@ -119,22 +122,48 @@ def maybe_set_clock_from_dns():
             secs *= 256
             secs += n
         del bits
-        lt = time.localtime(secs)
-        if not 2016 <= lt[0] <= 2019:
-            log.log("Implausible time, from dns server. Ignoring.")
-            return
-            
-        print("Setting RTC...")
-        rtc = machine.RTC()
-        # Unfortunately this is 
-        # year, month, day, weekday, hour, min, sec, msec
-        # Note that setting weekday doesn't make sense, that's ignored.
-        rtc.datetime(
-            (lt[0], lt[1], lt[2], 0,
-            lt[3], lt[4], lt[5], 0)
-            ) 
-        log.log("RTC is set.")
+        set_clock_from_secs(secs)
         clock_is_set = True
+        
+def set_clock_from_secs(secs):
+    lt = time.localtime(secs)
+    if not 2016 <= lt[0] <= 2019:
+        log.log("Implausible time. Ignoring.")
+        return
+        
+    print("Setting RTC...")
+    rtc = machine.RTC()
+    # Unfortunately this is 
+    # year, month, day, weekday, hour, min, sec, msec
+    # Note that setting weekday doesn't make sense, that's ignored.
+    rtc.datetime(
+        (lt[0], lt[1], lt[2], 0,
+        lt[3], lt[4], lt[5], 0)
+        ) 
+    log.log("RTC is set.")
+    
+def set_clock_from_file():
+    # Called at boot time, try to set the clock from a file.
+    if time.time() > (3600 * 24 * 365):
+        # Already set
+        return
+    
+    def try_clock_file(filename):
+        try:
+            timestamp = int(open(filename, 'r').readline())
+        except OSError:
+            return False
+        log.log("Setting clock from file", filename)
+        set_clock_from_secs(timestamp)
+        return True
+    
+    if not try_clock_file("last.tim"):
+        try_clock_file("build.tim")
+
+def save_clock():
+    # Called sometimes in the main loop.
+    with open('last.tim', 'w') as f:
+        print(time.time(), file=f)
 
 def investigate_dns(telsession):
     print("Starting DNS investigation")
@@ -173,6 +202,7 @@ def mainloop(sta_if):
         pass # Unable to load ssids file, but that's ok,
         # maybe we haven't created it yet.
     # Now search for a valid API.
+    last_clock_save_time = 0
     while True:
         sta_if.disconnect()
         ok = search_for_ap(sta_if, telsession, recentgoodssids)
@@ -181,12 +211,16 @@ def mainloop(sta_if):
         log.flush()   
         if recentgoodssids.modified:
             recentgoodssids.save(SSIDS_FILE)
+        if clock_is_set and ((time.time() - last_clock_save_time) > 120):
+            save_clock()
+            last_clock_save_time = time.time()
 
 def main():
     log.log("Starting main")
     log.log("machine.reset_cause = ", machine.reset_cause())
     global blueled
     blueled = machine.Pin(2, machine.Pin.OUT)
+    set_clock_from_file()
     # If there is a AP active, let's turn it off.
     network.WLAN(network.AP_IF).active(False)
     # Now activate the STA interface.
