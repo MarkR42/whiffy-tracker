@@ -15,10 +15,20 @@ rm -f fs.img
 # Note that we seem to need a 4096 sector size, or Micropython
 # won't access the fs.
 # -s = sectors per cluster
-mkfs.fat -C -f 1 -S 4096 -s 1 fs.img 1024
+# -i = volume id, -n = volume name
+mkfs.fat -C -f 1 -S 4096 -s 1 fs.img 1024 -i 0000002a -n 'WHIFFYTRACK'
 
-rm -r fsroot/__pycache__ # remove pycache
-mcopy -i fs.img -s fsroot/* :: 
+# Make tmp directory to build the fs.
+rm -rf tmp
+mkdir tmp
+
+# Create a file with the build time
+# In seconds since 1/1/2000
+TZ=UTC python3 -c 'import time; print(int(time.time() - time.mktime( (2000,1,1,0,0,0,0,0,0))))' > tmp/build.tim
+
+cp -vr fsroot/* tmp/
+rm -rf tmp/__pycache__
+mcopy -i fs.img -s tmp/* :: 
 
 # Create some directories
 # mmd -i fs.img data1 data2
