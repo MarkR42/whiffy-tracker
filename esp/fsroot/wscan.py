@@ -72,7 +72,7 @@ def search_for_ap(sta_if, telsession, recentgoodssids):
                 break
             good = (ssid in recentgoodssids)
             if good == goodness: 
-                sta_if.connect(ssid, '')
+                sta_if.connect(ssid, '', False) # 3rd parameter = save config
                 # Wait for connection...
                 ok = wait_for_ap_connected(sta_if)
                 if ok:
