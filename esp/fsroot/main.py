@@ -1,9 +1,9 @@
-import wscan
 import time
 import network
 import machine
 
 def go():
+    import wscan
     wscan.main()
 
 def delayed_go():
@@ -22,3 +22,6 @@ def myscan():
         print(ap)
 
 delayed_go()
+
+# import miniserver
+# miniserver.start_server()
