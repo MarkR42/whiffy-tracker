@@ -28,9 +28,12 @@ def geolocate(ap_list):
         for a in ap_list ] 
         }
     url = 'https://www.googleapis.com/geolocation/v1/geolocate?key=' + api_key
-    req = urllib.request.Request(url, bytes(json.dumps(jsonobj), 'ascii'),
-        headers = {'Content-Type': 'application/json'} )
-    resp = urllib.request.urlopen(req)
+    try:
+        req = urllib.request.Request(url, bytes(json.dumps(jsonobj), 'ascii'),
+            headers = {'Content-Type': 'application/json'} )
+        resp = urllib.request.urlopen(req)
+    except urllib.error.HTTPError as e:
+        return None
     resp_json = str(resp.read(), 'ascii')
     print(resp_json)
     respobj = json.loads(resp_json)
